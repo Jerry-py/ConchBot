@@ -3,36 +3,42 @@ name: Bug report
 about: Create a report to help us improve
 title: ''
 labels: 'unknown bug'
-assignees: ''
+assignees: 'Jerry-py,Jerrydotpy'
 
 ---
 
-**Describe the bug**
+## Describe the bug
 A clear and concise description of what the bug is.
 
 ```
 
 ```
 
-**To Reproduce**
+## To Reproduce
 What did you do that made this happen?
 
 ```
 
 ```
 
-**Expected behavior**
+## Expected behavior
 A clear and concise description of what you expected to happen.
 
 ```
 
 ```
 
-**Screenshots**
+## Screenshots
 If applicable, add screenshots to help explain your problem.
 
+## Checklist
+- [ ] I have searched for duplicates
+- [ ] I have gave everything I know about this
+- [ ] This is not a prank.
 
-**Additional context**
+
+
+## Additional context
 Add any other context about the problem here.
 ```
 
