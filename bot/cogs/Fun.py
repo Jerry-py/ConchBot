@@ -1,24 +1,23 @@
 import json
 import urllib.request
-from aiohttp_requests import requests
-from aiohttp import request
 import random
 import os
 import dbl
 import aiohttp
 import asyncpraw
 import discord
-import DiscordUtils
 from discord.ext.commands.cooldowns import BucketType
 import httpx
 from discord.ext import commands
 from dotenv import load_dotenv
-from prsaw import RandomStuff
 import os
 import urllib
 import aiosqlite
 from bot.cogs.utils.embed import Embeds
 import datetime
+import randomstuff
+import requests as req
+import asyncio
 
 load_dotenv('.env')
 
@@ -28,7 +27,7 @@ reddit = asyncpraw.Reddit(client_id = os.getenv("redditid"),
                     password = os.getenv('redditpassword'),
                     user_agent = "ConchBotPraw")
 
-rs = RandomStuff(async_mode=True, api_key = os.getenv("aiapikey"))
+rs = randomstuff.AsyncClient(api_key = os.getenv("aiapikey"))
 dbltoken = os.getenv('DBLTOKEN')
 
 class Fun(commands.Cog):
@@ -39,10 +38,7 @@ class Fun(commands.Cog):
     def __init__(self, client):
         self.client = client
         self.dbl = dbl.DBLClient(self.client, dbltoken)
-        self.delete_snipes = dict()
-        self.edit_snipes = {}
-        self.delete_snipes_attachments = {}
-        self.time = datetime.datetime.utcnow().strftime('%Y:%m:%d %H:%M:%S')
+        self.time = datetime.datetime.utcnow().strftime('%Y:%m:%d %H:%M')
         
     async def category_convert(self, category):
         cat = category.lower()
@@ -96,15 +92,20 @@ class Fun(commands.Cog):
             else:
                 print(status)
                 return False
+            
+    @property
+    def _session(self):
+        return self.client.http._HTTPClient__session
 
-    @commands.Cog.listener()
-    async def on_message_delete(self, message):
-        self.delete_snipes[message.channel] = message
-        self.delete_snipes_attachments[message.channel] = message.attachments
-
-    @commands.Cog.listener()
-    async def on_message_edit(self, before, after):
-        self.edit_snipes[after.channel] = (before, after)
+    async def get_data(self, data_type: str = "json", url : str = None):
+        response = await self._session.get(url)
+        datatype = data_type.lower()
+        if datatype == "json":
+            return await response.json()
+        elif 'text' in data_type:
+            return await response.text()
+        else:
+            return 400
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -169,9 +170,7 @@ class Fun(commands.Cog):
     async def shorten(self, ctx, *, url):
         o = urllib.parse.quote(url, safe='/ :')
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post('https://tinyuid.com/api/v1/shorten', json={'url':o}) as resp:
-                e = await resp.json()
+        e = await self.get_data('json', f'https://is.gd/create.php?format=json&url={o}')
 
         return await ctx.send(f"<{e['result_url']}>")
 
@@ -208,108 +207,31 @@ class Fun(commands.Cog):
     @commands.command(description="It's This for That is a fun API and website! It gives startup ideas.")
     @commands.cooldown(1, 10, commands.BucketType.user) 
     async def itft(self, ctx):
-        async with aiohttp.ClientSession() as session:
-            async with session.get('http://itsthisforthat.com/api.php?json') as thing:
-                try:
-                    load = await thing.read()
-                    jdata = json.loads(load)
-                    embed = discord.Embed(title="Wait, what does your startup do?", colour=ctx.author.colour)
-                    embed.add_field(name="So, basically, it's like a", value=f"**{jdata['this']}**", inline=False)
-                    embed.add_field(name="For", value=f"**{jdata['that']}**", inline=False)
-                    embed.set_footer(text="ItsThisForThat API | itsthisforthat.com")
-                    await ctx.send(embed=embed)
-                except:
-                    await ctx.send("Woops! Something went wrong.")
-
-    @commands.group(invoke_without_command=True, description="Surf the FBI watchlist!")
-    async def fbi(self, ctx):
-        await ctx.send("What page?")
-        msg = await self.client.wait_for('message', check=lambda message: message.author == ctx.author, timeout=10)
-        page = int(msg.content)
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://api.fbi.gov/wanted/v1/list", params={'page': page}) as response:
-                data = json.loads(await response.read())
-                embeds = []
-                try:
-                  for item in data["items"]:
-                      embed = discord.Embed(title=f"FBI Wanted | {item['title']}")
-                      embed.add_field(name="Details:", value=item['details'])
-                      embed.add_field(name="Warning Message:", value=item['warning_message'])
-                      embed.add_field(name="Reward:", value=item['reward_text'])
-                      embed.add_field(name="UID:", value=item['uid'])
-                      embed.set_footer(text="Data from FBI API | For more info on an entry, use 'cb fbi details {UID}'")
-                      embeds.append(embed)
-
-                  paginator = DiscordUtils.Pagination.CustomEmbedPaginator(ctx, remove_reactions=True)
-                  paginator.add_reaction('⏪', "back")
-                  paginator.add_reaction('⏩', "next")
-
-                  await paginator.run(embeds)
-                except IndexError:
-                    return await ctx.send("Page not available or the number you inputed is doesn't exist") 
-    
-    @fbi.command(description="View the specific details of a person on the FBI watchlist via a UID!\n[value] value is optional.")
-    @commands.cooldown(1, 10, commands.BucketType.user)
-    async def details(self, ctx, uid, value=None):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://api.fbi.gov/@wanted-person/{uid}") as response:
-                data = json.loads(await response.read())
-
-                details = data["details"]
-                title = data["title"]
-                desc = data["description"]
-                reward = data["reward_text"]
-                warnmsg = data["warning_message"]
-                sex = data["sex"]
-                if value is not None:
-                    embed = discord.Embed(title=f"FBI Wanted | {title}", colour=discord.Colour.red(),
-                    description=f"Published on {data['publication']}", url=data['url'])
-                    try:
-                        embed.add_field(name=value, value=data[value])
-                        embed.set_footer(text="Data from FBI API | https://api.fbi.gov.docs")
-                        await ctx.send(embed=embed)
-                        return
-                    except:
-                        await ctx.send("That's an invalid value. Use 'cb help fbi' for more details.")
-                        return
-                    return
-                embed = discord.Embed(title=f"FBI Wanted | {title}", colour=discord.Colour.red(),
-                description=f"Published on {data['publication']}", url=data["url"])
-                if details is not None:
-                    embed.add_field(name="Details:",value=details, inline=False)
-                if desc is not None:
-                    embed.add_field(name="Description", value=desc)
-                if warnmsg is not None:
-                    embed.add_field(name="Warning Message:", value=warnmsg, inline=False)
-                if reward is not None:
-                    embed.add_field(name="Reward:", value=reward)
-                if sex is not None:
-                    embed.add_field(name="Sex:", value=sex, inline=False)
-                embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Seal_of_the_Federal_Bureau_of_Investigation.svg/300px-Seal_of_the_Federal_Bureau_of_Investigation.svg.png")
-                try:
-                    embed.set_image(url = data["images"][0]["large"])
-                except:
-                    pass
-
-                await ctx.send(embed=embed)
+        thing = await self.get_data('json', 'https://itft.io/api/v1/random')
+        try:
+            embed = discord.Embed(title="Wait, what does your startup do?", colour=ctx.author.colour)
+            embed.add_field(name="So, basically, it's like a", value=f"**{thing['this']}**", inline=False)
+            embed.add_field(name="For", value=f"**{thing['that']}**", inline=False)
+            embed.set_footer(text="ItsThisForThat API | itsthisforthat.com")
+            await ctx.send(embed=embed)
+        except:
+            await ctx.send("Woops! Something went wrong.")
 
     @commands.command(description="View COVID statistics for any country!")
     @commands.cooldown(1, 10, commands.BucketType.user) 
-    async def covid(self, ctx, country):
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://covid-api.mmediagroup.fr/v1/cases") as response:
-                data = json.loads(await response.read())
-                try:
-                    embed = discord.Embed(title=f"COVID-19 in {country}", colour=discord.Colour.gold(),)
-                    embed.add_field(name="Cases:", value=data[country]['All']['confirmed'])
-                    embed.add_field(name="Recovered Cases:", value=data[country]['All']['recovered'])
-                    embed.add_field(name="Deaths:", value=data[country]['All']['deaths'])
-                    embed.add_field(name="Country Population:", value=data[country]['All']['population'])
-                    embed.add_field(name="Life Expectancy:", value=data[country]['All']['life_expectancy'])
-                    embed.set_footer(text="Stats brought to you by M-Media-Group's COVID-19 API")
-                    await ctx.send(embed=embed)
-                except:
-                    await ctx.send("Country not found. Country names ***are case-sensitive***.")
+    async def covid(self, ctx, *, country):
+        data = await self.get_data('json', f"https://corona.lmao.ninja/v2/countries/{country}")
+        try:
+            embed = discord.Embed(title=f"COVID-19 in {country}", colour=discord.Colour.gold(),)
+            embed.add_field(name="Cases:", value=data[country]['All']['confirmed'])
+            embed.add_field(name="Recovered Cases:", value=data[country]['All']['recovered'])
+            embed.add_field(name="Deaths:", value=data[country]['All']['deaths'])
+            embed.add_field(name="Country Population:", value=data[country]['All']['population'])
+            embed.add_field(name="Life Expectancy:", value=data[country]['All']['life_expectancy'])
+            embed.set_footer(text="Stats brought to you by M-Media-Group's COVID-19 API")
+            await ctx.send(embed=embed)
+        except:
+            await ctx.send("Country not found. Country names ***are case-sensitive***.")
 
     @commands.command(description="Get a joke from the r/jokes subreddit!")
     @commands.cooldown(1, 10, commands.BucketType.user) 
@@ -418,22 +340,20 @@ class Fun(commands.Cog):
                 title=f"{ctx.author}'s Avatar",
                 colour=ctx.author.colour
             )
-            embed.set_image(url=ctx.author.avatar_url)
+            embed.set_image(url=ctx.author.avatar.url)
         else:
             embed = discord.Embed(
                 title=f"{member}'s Avatar",
                 colour=member.colour
             )
-            embed.set_image(url=member.avatar_url)
+            embed.set_image(url=member.avatar.url)
 
         await ctx.send(embed=embed)
     
     @commands.group(invoke_without_command=True, description="Returns a random activity for when you're bored!")
     @commands.cooldown(1, 5, BucketType.user)
     async def bored(self, ctx):
-        response = await requests.get('https://boredapi.com/api/activity')
-        json = await response.json()
-
+        json = await self.get_data('json', 'https://www.boredapi.com/api/activity/')
         embed = discord.Embed(title="I'm Bored", color=discord.Color.random())
         embed.add_field(name="If you're bored, you should...", value=json["activity"])
         if json['link']:
@@ -449,7 +369,10 @@ class Fun(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.group(invoke_without_command=True, description="Make a QR code!")
-    async def qr(self, ctx, value):
+    async def qr(self, ctx, value = None):
+        
+        if value is None:
+            o = ctx.message.attachments[0].url
         o = urllib.parse.quote(value)
 
         await ctx.send(f'https://api.qrserver.com/v1/create-qr-code/?data={o}')
@@ -468,21 +391,17 @@ class Fun(commands.Cog):
 
             url = urllib.parse.quote(ctx.message.attachments[0].url)
 
-        async with aiohttp.ClientSession() as cs:
-            async with cs.get(f'https://api.qrserver.com/v1/read-qr-code/?fileurl={url}') as r:
-                try:
-                    res = await r.json()
-                except:
-                    return await ctx.send("Your QR code has to be an attachment or a URL.")
+        try:
+            res = await self.get_data('json', f'https://api.qrserver.com/v1/read-qr-code/?fileurl={url}')
+        except:
+            return await ctx.send("I couldn't find any QR codes in that image.")
 
         await ctx.send(res[0]['symbol'][0]['data'])
 
     @bored.command(description="Search for a specific activity via an activity key.")
     @commands.cooldown(1, 5, BucketType.user)
     async def key(self, ctx, key):
-        response = await requests.get(f'http://www.boredapi.com/api/activity?key={key}')
-        json = await response.json()
-
+        json = await self.get_data('json', f'https://www.boredapi.com/api/activity/{key}')
         try:
             embed = discord.Embed(title="I'm Bored", color=discord.Color.random())
             embed.add_field(name="If you're bored, you should...", value=json["activity"])
@@ -512,8 +431,7 @@ class Fun(commands.Cog):
         if not category:
             return await ctx.send("That category does not exist.")
 
-        response = await requests.get(f'https://www.boredapi.com/api/activity?type={category}')
-        json = await response.json()
+        json = await self.get_data('json', f'https://www.boredapi.com/api/activity?type={category}')
 
         try:
             embed = discord.Embed(title="I'm Bored", color=discord.Color.random())
@@ -532,41 +450,6 @@ class Fun(commands.Cog):
         except KeyError:
             return await ctx.send("That category does not exist.")
 
-    @commands.group(name='snipe', description="Get the most recently deleted message in a channel!")
-    async def snipe_group(self, ctx):
-        if ctx.invoked_subcommand is None:
-            try:
-                sniped_message = self.delete_snipes[ctx.channel]
-            except KeyError:
-                await ctx.send('There are no deleted messages in this channel to snipe!')
-            else:
-                result = discord.Embed(
-                    color=discord.Color.red(),
-                    description=sniped_message.content,
-                    timestamp=sniped_message.created_at
-                )
-                result.set_author(name=sniped_message.author.display_name, icon_url=sniped_message.author.avatar_url)
-                try:
-                    result.set_image(url=self.delete_snipes_attachments[ctx.channel][0].url)
-                except:
-                    pass
-                await ctx.send(embed=result)
-                
-    @snipe_group.command(name='edit', description="Get the most recently edited message in the channel, before and after.")
-    async def snipe_edit(self, ctx):
-        try:
-            before, after = self.edit_snipes[ctx.channel]
-        except KeyError:
-            await ctx.send('There are no message edits in this channel to snipe!')
-        else:
-            result = discord.Embed(
-                color=discord.Color.red(),
-                timestamp=after.edited_at
-            )
-            result.add_field(name='Before', value=before.content, inline=False)
-            result.add_field(name='After', value=after.content, inline=False)
-            result.set_author(name=after.author.display_name, icon_url=after.author.avatar_url)
-            await ctx.send(embed=result)
 
     @commands.group()
     async def gofile(self, ctx):
@@ -582,31 +465,27 @@ class Fun(commands.Cog):
         types = ["binary", "base64"]
         type = type.lower()
         if type in types:
-            async with aiohttp.ClientSession() as encodeSession:
-                if type == "binary":
-                    async with encodeSession.get(f"https://some-random-api.ml/binary?text={code}") as encoder:
-                        if encoder.status == 200:
-                            api = await encoder.json()
-                            encoded = api["binary"]
-                            embed = discord.Embed(title="Binary Encoder")
-                            embed.add_field(name="Input", value=f"```{code}```", inline=False)
-                            embed.add_field(name="Output", value=f"```{encoded}```", inline=False)
-                            embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar_url)
-                        else:
-                            embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=encoder.status)
-                        await ctx.send(embed=embed)
-                else:
-                    async with encodeSession.get(f"https://some-random-api.ml/base64?encode={code}") as encoder:
-                        if encoder.status == 200:
-                            api = await encoder.json()
-                            encoded = api["base64"]
-                            embed = discord.Embed(title="Base64 Encoder")
-                            embed.add_field(name="Input", value=f"```{code}```", inline=False)
-                            embed.add_field(name="Output", value=f"```{encoded}```", inline=False)
-                            embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar_url)
-                        else:
-                            embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=encoder.status)
-                        await ctx.send(embed=embed)
+            if type == "binary":
+                encoder = await self.get_data('json', f'https://some-random-api.ml/binary?encode={code}')
+                try:
+                    encoded = encoder["binary"]
+                    embed = discord.Embed(title="Binary Encoder", colour=discord.Color.green())
+                    embed.add_field(name="Input", value=f"```{code}```", inline=False)
+                    embed.add_field(name="Output", value=f"```{encoded}```", inline=False)
+                    embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url)
+                except:
+                    embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=400)
+            else:
+                encoder = await self.get_data('json', f'https://some-random-api.ml/base64?encode={code}')
+                try:                            
+                    encoded = encoder["base64"]
+                    embed = discord.Embed(title="Base64 Encoder", colour=discord.Color.green())
+                    embed.add_field(name="Input", value=f"```{code}```", inline=False)
+                    embed.add_field(name="Output", value=f"```{encoded}```", inline=False)
+                    embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url)
+                except:
+                    embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=400)
+            await ctx.send(embed=embed)
         else:
             await ctx.send("Use binary or base64")
 
@@ -615,31 +494,28 @@ class Fun(commands.Cog):
         types = ["binary", "base64"]
         type = type.lower()
         if type in types:
-            async with aiohttp.ClientSession() as decodeSession:
-                if type == "binary":
-                    async with decodeSession.get(f"https://some-random-api.ml/binary?decode={code}") as decoder:
-                        if decoder.status == 200:
-                            api = await decoder.json()
-                            decoded = api["text"]
-                            embed = discord.Embed(title="Binary Decoder")
-                            embed.add_field(name="Input", value=f"```{code}```", inline=False)
-                            embed.add_field(name="Output", value=f"```{decoded}```", inline=False)
-                            embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar_url)
-                        else:
-                            embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=decoder.status)
-                        await ctx.send(embed=embed)
-                else:
-                    async with decodeSession.get(f"https://some-random-api.ml/base64?decode={code}") as decoder:
-                        if decoder.status == 200:
-                            api = await decoder.json()
-                            decoded = api["text"]
-                            embed = discord.Embed(title="Base64 Decoder")
-                            embed.add_field(name="Input", value=f"```{code}```", inline=False)
-                            embed.add_field(name="Output", value=f"```{decoded}```", inline=False)
-                            embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar_url)
-                        else:
-                            embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=decoder.status)
-                        await ctx.send(embed=embed)
+            if type == "binary":
+                decoder = await self.get_data('json', 'https://some-random-api.ml/binary?decode={}'.format(code))
+                try:
+                    decoded = decoder["text"]
+                    embed = discord.Embed(title="Binary Decoder")
+                    embed.add_field(name="Input", value=f"```{code}```", inline=False)
+                    embed.add_field(name="Output", value=f"```{decoded}```", inline=False)
+                    embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url)
+                except:
+                    embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=decoder.status)
+                    await ctx.send(embed=embed)
+            else:
+                decoder = await self.get_data('json', 'https://some-random-api.ml/base64?decode={}'.format(code))
+                try:
+                    decoded = decoder["text"]
+                    embed = discord.Embed(title="Base64 Decoder")
+                    embed.add_field(name="Input", value=f"```{code}```", inline=False)
+                    embed.add_field(name="Output", value=f"```{decoded}```", inline=False)
+                    embed.set_footer(text=f"Requested by {ctx.author.name}", icon_url=ctx.author.avatar.url)
+                except:
+                    embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=400)
+                await ctx.send(embed=embed)
         else:
             await ctx.send("Use binary or base64")
 
@@ -650,39 +526,45 @@ class Fun(commands.Cog):
         search_web = f"https://some-random-api.ml/lyrics?title={search}"
 
         await ctx.channel.trigger_typing()
-        async with request("GET", search_web, headers={}) as response:
-            if response.status == 200:
-                api = await response.json()
-                title = api["title"]
-                author = api["author"]
-                lyrics = api["lyrics"]
+        api = await self.get_data('json', search_web)
+        try:
+            title = api["title"]
+            author = api["author"]
+            lyrics = api["lyrics"]
 
-                embed = discord.Embed(title=f"{title} by {author}", description=lyrics)
-                try:
-                    await ctx.send(embed=embed)
-                except:
-                    paginator = DiscordUtils.Pagination.CustomEmbedPaginator(ctx, remove_reactions=True)
-                    paginator.add_reaction('◀', 'back')
-                    paginator.add_reaction('▶', 'next')
-
-
-                    embed1 = discord.Embed(
-                        title=f"{title} by {author} | Page 1",
-                        description=lyrics[: len(lyrics) // 2],
-                    )
-
-                    embed2 = discord.Embed(
-                        title=f"{title} by {author} | Page 2",
-                        description=lyrics[len(lyrics) // 2 :],
-                    )
-
-
-                    embeds = [embed1, embed2]
-
-                    await paginator.run(embeds)
-            else:
-                embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=response.status)
+            embed = discord.Embed(title=f"{title} by {author}", description=lyrics)
+            try:
                 await ctx.send(embed=embed)
+            except:
+                embeds = []
+
+                page_count = lyrics / 4096
+
+                if '.' in str(page_count):
+                    page_count = int(page_count) + 1
+
+                num = 4096
+                for i in range(page_count):
+                    embed = discord.Embed(title=f"{title} by {author}", description=lyrics[:num])
+                    embed.set_footer(text=f"Page {i}/{page_count}")
+                    embeds.append(embed)
+                    num += 4096
+
+
+                paginator = menus.Paginator(pages=embeds, show_disabled=False, show_indicator=True)
+
+                paginator.customize_button("next", button_label=">", button_style=discord.ButtonStyle.green)
+                paginator.customize_button("prev", button_label="<", button_style=discord.ButtonStyle.green)
+                paginator.customize_button("first", button_label="<<", button_style=discord.ButtonStyle.blurple)
+                paginator.customize_button("last", button_label=">>", button_style=discord.ButtonStyle.blurple)
+
+                await paginator.send(ctx, ephemeral=False)
+
+
+
+        except:
+            embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=400)
+            await ctx.send(embed=embed)
 
     @commands.command(description="Define a word!")
     @commands.cooldown(1, 5, commands.BucketType.user)
@@ -690,50 +572,76 @@ class Fun(commands.Cog):
         word_lowered = word.lower()
         word_link = f"https://some-random-api.ml/dictionary?word={word_lowered}"
 
-        async with request("GET", word_link, headers={}) as response:
-            if response.status == 200:
-                api = await response.json()
-                word_name = api["word"]
-                word_definition = api["definition"]
-                paginator = DiscordUtils.Pagination.CustomEmbedPaginator(ctx, remove_reactions=True)
-                paginator.add_reaction('◀', 'back')
-                paginator.add_reaction('▶', 'next')
+        api = await self.get_data('json', word_link)
+        try:
+            embeds = []
+            word_name = api["word"]
+            word_definition = api["definition"]
+    
+            page_count = word_definition / 4096
+            num = 4096        
+            for i in range(page_count):
+                embed = discord.Embed(title=f"{word_name} Definition", description=word_definition[:num])
+                embed.set_footer(text=f"Page {i}/{page_count}")
+                embeds.append(embed)
+                num += 4096
 
+            await ctx.defer()
 
-                embed1 = discord.Embed(
-                    title=f"{word_name} | Page 1",
-                    description=word_definition[: len(word_definition) // 2],
-                )
+            paginator = menus.Paginator(pages=embeds, show_disabled=False, show_indicator=True)
 
-                embed2 = discord.Embed(
-                    title=f"{word_name} | Page 2",
-                    description=word_definition[len(word_definition) // 2 :],
-                )
+            paginator.customize_button("next", button_label=">", button_style=discord.ButtonStyle.green)
+            paginator.customize_button("prev", button_label="<", button_style=discord.ButtonStyle.green)
+            paginator.customize_button("first", button_label="<<", button_style=discord.ButtonStyle.blurple)
+            paginator.customize_button("last", button_label=">>", button_style=discord.ButtonStyle.blurple)
 
-
-                embeds = [embed1, embed2]
-
-                await paginator.run(embeds)
-            else:
-                embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=response.status)
-                await ctx.send(embed=embed)
+            await paginator.send(ctx, ephemeral=False)
+        except:
+            embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=400)
+            await ctx.send(embed=embed)
 
     @commands.command(description="Returns a real-looking Discord bot token.")
     @commands.cooldown(1, 5, commands.BucketType.user)
     async def token(self, ctx):
         token_web = "https://some-random-api.ml/bottoken"
 
-        async with ctx.typing():
-            async with request("GET", token_web, headers={}) as response:
-                if response.status == 200:
-                    api = await response.json()
-                    bottoken = api["token"]
-                else:
-                    embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=response.status)
-                    await ctx.send(embed = embed)
-
-            await ctx.send(bottoken)
-
+        response = await self.get_data('json', token_web)
+        try:
+            bottoken = response["token"]
+        except:
+            embed = Embeds().OnApiError(command_name=ctx.command.qualified_name, status=400)
+            return await ctx.send(embed=embed)
+        await ctx.send(bottoken)
+        
+        
+    @commands.command()
+    async def ttsobama(self, ctx, *, text : str = None):
+        if text is None:
+            return await ctx.send("You need to enter text!")
+        
+        if len(text) > 280:
+            return await ctx.send("Text is too long!")
+        
+        await ctx.send('Your video is loading... Might take up to 5-12 seconds', delete_after=12)
+        
+        response = req.post(url='http://talkobamato.me/synthesize.py', data={
+                "input_text": text
+            })
+        await asyncio.sleep(12)
+        url = response.url.replace('http://talkobamato.me/synthesize.py?speech_key=', '')
+        
+        url = 'http://talkobamato.me/synth/output/' + url + '/obama.mp4'
+        
+        await asyncio.sleep(1)
+        
+        urllib.request.urlretrieve(url, 'obama.mp4')
+        
+        file = discord.File('obama.mp4')
+        
+        await ctx.send(file=file)
+        
+        os.remove('obama.mp4')
+        
 
 def setup(client):
     client.add_cog(Fun(client))

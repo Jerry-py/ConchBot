@@ -14,7 +14,7 @@ from bot.cogs.utils.embed import Embeds
 import logging
 
 def get_prefix(client, message):
-    prefixes = ['cb!', 'cB ', 'CB ', 'Cb ']
+    prefixes = ['cb ', 'cb!', 'cB ', 'CB ', 'Cb ']
     return commands.when_mentioned_or(*prefixes)(client, message)
 
 load_env = load_dotenv()
@@ -24,11 +24,9 @@ initial_extensions = [
     "bot.cogs.Currency",
     "bot.cogs.Fun",
     "bot.cogs.Help",
-    "bot.cogs.ifunny",
     "bot.cogs.Image",
     "bot.cogs.Misc",
     "bot.cogs.nsfw",
-    "bot.cogs.owner",
     "bot.cogs.Secret",
     "bot.cogs.Support",
     "bot.cogs.tags",
@@ -48,17 +46,17 @@ class ConchBot(commands.Bot):
         self.launch_time = datetime.utcnow()
         os.environ["JISHAKU_NO_UNDERSCORE"] = "True"
         os.environ['JISHAKU_RETAIN'] = "True"
-        for filename in os.listdir('./bot/cogs'):
-            if filename.endswith('.py'):
-                self.load_extension(f'bot.cogs.{filename[:-3]}')
+        for cog in initial_extensions:
+            self.load_extension(cog)
+        if os.getenv("DEBUG") == "True":      
+            logging.basicConfig(level=logging.INFO)
+            logger = logging.getLogger('discord')
+            logger.setLevel(logging.DEBUG)
+            handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+            handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+            logger.addHandler(handler)
         self.load_extension('bot.cogs.utils.handler')
-        logging.basicConfig(level=logging.INFO)
-        logger = logging.getLogger('discord')
-        logger.setLevel(logging.DEBUG)
-        handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
-        handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-        logger.addHandler(handler)
-    
+
     @tasks.loop(seconds=15.0)
     async def status_loop(self):
         statuses = cycle([f"{len(set(self.get_all_members()))} "

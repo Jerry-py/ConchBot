@@ -20,8 +20,7 @@ This bot uses dotenv. So this is what your `.env` should look like
 ```py
 TOKEN= #your token here
 ID= #your id here
-iFunnyemail= #your ifunny email here
-iFunnypass= #your ifunny pass here
+DEBUG= #True/False
 redditid= #your reddit application id
 redditsecret= #your reddit application secret
 redditpassword= #your reddit application password
