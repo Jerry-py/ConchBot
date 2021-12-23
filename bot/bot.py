@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 from datetime import datetime
 from bot.cogs.tags import Tags
 from bot.cogs.Currency import Currency
-import asyncio
 import time
 import aiohttp
 from bot.cogs.utils.embed import Embeds
