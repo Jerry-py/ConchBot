@@ -248,7 +248,7 @@ class NSFW(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(aliases=["r34"], description="Get Rule34 images!\n[query] value is optional - defaults to r/rule34 when none.")
-    @commands.cooldown(1, 5, commands.BucketType.user) 
+    @commands.cooldown(1, 5, commands.BucketType.user)
     async def rule34(self, ctx, *, query=None):
         if query is None:
             msg = await ctx.send("Getting your porn...")
@@ -258,7 +258,7 @@ class NSFW(commands.Cog):
 
             async for submission in top:
                 all_subs.append(submission)
-            
+
             ransub = random.choice(all_subs)
 
             embed = discord.Embed(title=ransub.title, colour=ctx.author.colour, url=ransub.url)
@@ -275,14 +275,18 @@ class NSFW(commands.Cog):
                 total = []
 
                 try:
-                    for image in images:
-                        total.append(image)
+                    total.extend(iter(images))
                 except:
                     return await ctx.send(f"No images were found on Rule34 with the tag `{query}`")
 
                 finalimg = random.choice(total)
 
-                embed = discord.Embed(title="ID: " + finalimg.id, colour=ctx.author.colour, url=finalimg.file_url)
+                embed = discord.Embed(
+                    title=f'ID: {finalimg.id}',
+                    colour=ctx.author.colour,
+                    url=finalimg.file_url,
+                )
+
                 embed.set_image(url=finalimg.file_url)
                 embed.set_footer(text=f"Posted by {finalimg.creator_ID} on Rule 34. | Score: {finalimg.score}")
 

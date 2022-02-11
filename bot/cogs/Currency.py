@@ -609,8 +609,7 @@ class Currency(commands.Cog):
         result = await cursor.fetchall()
         embed = discord.Embed(title="Available tasks", colour=ctx.author.colour)
         for entry in tasks:
-            flag = any(entry in a for a in result)
-            if flag:
+            if flag := any(entry in a for a in result):
                 embed.add_field(name=f"{entry} ✅", value=f"Description: {tasks[entry].get('desc')}\nReward: {tasks[entry].get('reward')}")
             else:
                 embed.add_field(name=entry, value=f"Description: {tasks[entry].get('desc')}\nReward: {tasks[entry].get('reward')}")
